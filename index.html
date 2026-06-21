@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>高雄鳳山區瑞興國小-教師加班時間表</title>
+  
+  <!-- 核心新增：載入 Firebase CDN 獨立函式庫，完全脫離 Apps Script 束縛 -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+  <style>
+    /* === 全域變數與配色 (溫馨暖色系) === */
+    :root {
+      --bg-color: #fcf8f3;      /* 背景：米白暖色 */
+      --paper-color: #fff;      /* 紙張：白 */
+      --border-color: #5d4037;  /* 邊框：深棕色 */
+      --header-bg: #ffe0b2;     /* 表頭：淡橘色 */
+      --weekend-bg: #ffebee;    /* 六日背景：淡粉紅 */
+      --weekend-text: #d32f2f;  /* 六日文字：紅 */
+      --locked-bg: #eeeeee;     /* 鎖定背景：淺灰 */
+      --text-color: #4e342e;    /* 文字：深褐 */
+      --btn-save: #81c784;      /* 按鈕：柔和綠 */
+      --btn-load: #ffb74d;      /* 按鈕：柔和橘 */
+      --btn-print: #64b5f6;     /* 按鈕：列印藍 */
+    }
+    
+    /* 強制全域使用 border-box 模型，確保寬高計算精準無溢出 */
+    *, *:before, *:after {
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: "Microsoft JhengHei", "PMingLiU", sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      padding: 20px;
+      margin: 0;
+    }
+    /* === 自動消失訊息 (Toast) 樣式 === */
+    #toast-container {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast-msg {
+      background-color: #fff9c4; 
+      color: #d32f2f;            
+      padding: 12px 28px;
+      border: 2px solid #fbc02d; 
+      border-radius: 30px;
+      font-size: 16px;
+      font-weight: 900;          
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      opacity: 0;
+      transform: translateY(0); 
+      transition: opacity 0.3s ease;
+    }
+    .toast-msg.show { opacity: 1; }
+    /* === 控制列 === */
+    .control-bar, .middle-control-bar {
+      background: #fff;
+      padding: 15px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(93, 64, 55, 0.1);
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      border: 1px solid #efebe9;
+    }
+    .middle-control-bar {
+      justify-content: center;
+      margin-top: 15px;
+      margin-bottom: 15px;
+    }
+    .control-group { display: flex; flex-direction: column; gap: 4px; }
+    
+    .password-wrapper { position: relative; display: inline-block; }
+    
+    .control-bar input[type="password"],
+    .control-bar input[type="text"].pwd-visible {
+      padding: 8px 35px 8px 10px; 
+      border: 1px solid #d7ccc8; 
+      border-radius: 6px; 
+      width: 150px;
+      font-size: 16px;
+    }
+    .toggle-password {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      cursor: pointer; font-size: 16px; color: #8d6e63; z-index: 2;
+    }
+    .hint-text { 
+      font-size: 14px; color: #5d4037; line-height: 1.5; font-weight: bold; flex: 1; min-width: 300px;
+    }
+    .btn-group { display: flex; gap: 10px; margin-left: auto; }
+    .middle-control-bar .btn-group { margin-left: 0; }
+    .btn {
+      padding: 10px 20px; border: none; border-radius: 25px; cursor: pointer;
+      font-weight: bold; color: white; transition: 0.2s; white-space: nowrap; font-size: 15px;
+      display: flex; align-items: center; gap: 5px; justify-content: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .btn-save { background-color: var(--btn-save); }
+    .btn-load { background-color: var(--btn-load); }
+    .btn-print { background-color: var(--btn-print); }
+    .btn:hover { opacity: 0.9; transform: translateY(-2px); }
+    /* === A4 紙張與表格設定 === */
+    .sheet-paper {
+      background: var(--paper-color);
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      padding: 10mm 12mm;
+      box-shadow: 0 4px 15px rgba(93, 64, 55, 0.15);
+      box-sizing: border-box;
+      position: relative;
+    }
+    .header-section { text-align: center; margin-bottom: 5px; }
+    .main-title { font-size: 26px; font-weight: bold; margin-bottom: 8px; color: var(--text-color); }
+    
+    select.date-select {
+      font-size: 22px; border: none; border-bottom: 1px solid #d7ccc8; 
+      padding: 0 5px; color: var(--text-color); background-color: transparent;
+      font-weight: bold; appearance: none; -webkit-appearance: none; text-align: center;
+    }
+    .sub-info { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 5px; }
+    .input-line {
+      border: none; border-bottom: 1px solid var(--border-color); text-align: center;
+      font-family: inherit; font-size: 20px; font-weight: bold; width: 140px; color: var(--text-color); background: transparent;
+      border-radius: 0;
+    }
+    .legend-box {
+      border: 1px solid var(--border-color); 
+      padding: 10px 15px; 
+      font-size: 14px; 
+      font-weight: bold;
+      margin-bottom: 8px; 
+      line-height: 1.5;
+      border-radius: 4px; 
+      background-color: #fffbf0;
+    }
+    .legend-row { display: block; }
+    .warning-text {
+      color: #d32f2f;
+      font-weight: 900;
+      font-size: 15px;
+      margin-bottom: 10px;
+      line-height: 1.4;
+      border-bottom: 1px dashed #d32f2f;
+      padding-bottom: 5px;
+      display: inline-block;
+    }
+    .tables-container { display: flex; gap: 10px; }
+    .table-column { flex: 1; }
+    
+    table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      font-size: 12px; 
+      table-layout: fixed; 
+      border: 1px solid var(--border-color); 
+    }
+    
+    th {
+      background-color: var(--header-bg); font-weight: bold; color: var(--text-color); 
+      line-height: 1.2; padding: 6px 0;
+      height: auto; white-space: normal; vertical-align: middle;
+      border: 1px solid var(--border-color);
+      background-clip: padding-box; 
+    }
+    td {
+      border: 1px solid var(--border-color); text-align: center;
+      height: 35px; padding: 0; overflow: visible; white-space: nowrap;
+      background-clip: padding-box; 
+    }
+    
+    .time-vertical {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1;
+    }
+    .time-sep { font-size: 10px; line-height: 0.8; margin: 1px 0; font-weight: normal; }
+    .th-min { font-size: 10px; font-weight: normal; display: block; margin-top: 2px; }
+    
+    /* 日期格子樣式 */
+    .day-cell { 
+      line-height: 1.2; 
+      position: relative; 
+      cursor: pointer;
+      padding: 4px 2px !important;
+      vertical-align: middle;
+      user-select: none;
+    }
+    .day-num { font-size: 13px; font-weight: bold; color: #000; }
+    .day-week { font-size: 11px; display: inline-block; margin-left: 2px; }
+    .text-red { color: var(--weekend-text) !important; }
+    
+    /* 節日文字顯示 */
+    .holiday-text {
+      font-size: 11px;
+      color: #d32f2f;
+      font-weight: bold;
+      display: block;
+      margin-top: 2px;
+      line-height: 1.2;
+      white-space: normal;
+      pointer-events: none;
+    }
+
+    /* 日期下拉選單 */
+    .holiday-select {
+      display: none; 
+      width: 90%;
+      height: 20px;
+      font-size: 11px;
+      font-weight: bold;
+      margin: 4px auto 0 auto;
+      border: 1px solid var(--border-color);
+      background: #fff;
+      border-radius: 4px;
+      color: var(--text-color);
+      cursor: pointer;
+      text-align: center;
+      padding: 0 2px;
+      transition: all 0.15s ease;
+    }
+    
+    .holiday-select.active {
+      display: inline-block !important;
+    }
+    
+    .holiday-indicator { 
+      display: none; 
+    }
+    .slot-wrapper { position: relative; width: 100%; height: 100%; overflow: hidden; }
+    .slot-select {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0;
+      z-index: 2; cursor: pointer; -webkit-appearance: none;
+    }
+    .slot-display {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center; z-index: 1;
+      font-weight: 900; font-size: 16px; color: var(--text-color); pointer-events: none;
+    }
+    .weekend-row { background-color: var(--weekend-bg); }
+    .cell-locked { background-color: var(--locked-bg) !important; pointer-events: none; }
+    .footer-section {
+      margin-top: 15px; border: 1px solid var(--border-color); padding: 15px;
+      font-size: 15px; background-color: #fffdf5; border-radius: 4px;
+    }
+    .patrol-guard-input { display: flex; gap: 15px; margin-bottom: 10px; font-size: 15px; align-items: center; flex-wrap: wrap; }
+    .chk-icon { 
+      font-size: 22px; margin-right: 2px; vertical-align: middle; 
+      color: #ccc; cursor: pointer; user-select: none; padding: 5px; 
+    }
+    .chk-active { color: #000 !important; font-weight: bold; }
+    .tiny-select {
+      width: 50px; border: none; border-bottom: 1px solid var(--border-color); text-align: center;
+      background-color: transparent; font-family: inherit; font-size: 16px; font-weight: bold; color: #000;
+      -webkit-appearance: none; cursor: pointer; padding: 0; border-radius: 0;
+    }
+    .total-number {
+      font-weight: 900; font-size: 20px; text-decoration: underline; margin: 0 5px;
+    }
+    .signature-area { display: flex; justify-content: space-between; margin-top: 25px; text-align: center; padding: 0 10px; }
+    .sig-box { width: 30%; display: flex; flex-direction: column; }
+    .sig-title { font-size: 18px; margin-bottom: 0; padding-bottom: 0; line-height: 1; font-weight: bold; }
+    .sig-space { height: 60px; } 
+    .sig-bottom { font-size: 18px; margin-top: 0; padding-top: 0; line-height: 1; font-weight: bold; }
+    .note-section {
+      margin-top: 8px; font-size: 13px; line-height: 1.4; color: var(--text-color); font-weight: bold;
+    }
+    .revision-date {
+      position: absolute; bottom: 10mm; right: 12mm; font-size: 12px; color: #8d6e63; font-weight: bold;
+    }
+
+    /* === 🖨️ 專門用於 A4 列印的一鍵單頁壓縮與格線補強樣式 === */
+    @media print {
+      @page { 
+        size: A4 portrait; 
+        margin: 6mm 10mm !important; 
+      } 
+      *, *:before, *:after {
+        box-sizing: border-box !important;
+      }
+      body { 
+        background: none !important; 
+        padding: 0 !important; 
+        margin: 0 !important; 
+        font-size: 12px !important;
+      }
+      .control-bar, .middle-control-bar, #toast-container, .warning-text, .holiday-select, .slot-select { 
+        display: none !important; 
+      }
+      .sheet-paper { 
+        box-shadow: none !important; 
+        margin: 0 !important; 
+        width: 100% !important; 
+        padding: 0 !important; 
+        border: none !important; 
+        min-height: auto !important; 
+        height: auto !important;
+      }
+      .main-title { font-size: 21px !important; margin-bottom: 4px !important; } 
+      .input-line { font-size: 17px !important; height: 22px !important; } 
+      select.date-select { font-size: 19px !important; display: inline-block !important; border: none !important; } 
+      .sub-info { margin-top: 2px !important; margin-bottom: 4px !important; }
+      .legend-box { font-size: 11px !important; padding: 4px 10px !important; margin-bottom: 6px !important; } 
+      
+      .tables-container { 
+        display: flex !important; 
+        flex-direction: row !important; 
+        gap: 8px !important; 
+        width: 100% !important;
+        padding-right: 1px !important; 
+      }
+      .table-column { 
+        flex: 1 !important; 
+        width: auto !important; 
+        max-width: 49.5% !important;
+        margin-bottom: 0 !important; 
+      }
+      table { 
+        width: 100% !important; 
+        border-collapse: collapse !important; 
+        font-size: 12px !important;
+        border: 1px solid #5d4037 !important; 
+      } 
+      th, td { 
+        border: 1px solid #5d4037 !important; 
+        background-clip: padding-box !important; 
+      }
+      th { 
+        height: auto !important; 
+        padding: 3px 0 !important; 
+        font-size: 11px !important;
+        background-color: #eee !important; 
+        color: #000 !important; 
+        -webkit-print-color-adjust: exact; 
+      }
+      td { height: 35px !important; } 
+      .time-vertical { font-size: 9px !important; }
+      .time-sep { font-size: 7px !important; }
+      .th-min { font-size: 8px !important; margin-top: 1px !important; }
+      .total-cell { font-size: 14px !important; font-weight: 900 !important; }
+      .slot-display { font-size: 14px !important; font-weight: 900 !important; } 
+      .holiday-text { font-size: 10px !important; font-weight: bold !important; margin-top: 1px !important; }
+      
+      .footer-section { 
+        background-color: transparent !important; 
+        border: 1px solid #000 !important; 
+        margin-top: 4px !important; 
+        padding: 4px 10px !important; 
+        font-size: 13px !important; 
+      }
+      .patrol-guard-input { 
+        font-size: 13px !important; 
+        margin-bottom: 2px !important; 
+      } 
+      .tiny-select { font-size: 13px !important; font-weight: bold !important; }
+      .chk-icon { font-size: 16px !important; }
+      .total-number { font-size: 16px !important; }
+      
+      .signature-area { 
+        margin-top: 4px !important; 
+      } 
+      .sig-title { font-size: 14px !important; } 
+      .sig-bottom { font-size: 14px !important; } 
+      .sig-space { 
+        height: 45px !important; 
+      } 
+      
+      .note-section { 
+        font-size: 9.5px !important; 
+        margin-top: 2px !important;  
+        line-height: 1.2 !important; 
+        color: #000 !important; 
+      }
+      .revision-date { 
+        position: absolute !important; 
+        bottom: 0 !important; 
+        right: 0 !important; 
+        font-size: 10px !important; 
+        color: #000 !important; 
+      }
+      .weekend-row { background-color: #fce4ec !important; -webkit-print-color-adjust: exact; }
+      .cell-locked { background-color: #eee !important; -webkit-print-color-adjust: exact; }
+      .text-red { color: #d32f2f !important; -webkit-print-color-adjust: exact; }
+    }
+
+    /* === RWD 手機版自適應 === */
+    @media screen and (max-width: 768px) {
+      body { padding: 10px; margin: 0; }
+      .control-bar, .middle-control-bar { padding: 15px; flex-direction: column; align-items: stretch; gap: 15px; }
+      .control-group { width: 100%; justify-content: flex-start; }
+      .password-wrapper, .control-bar input { width: 100%; }
+      .btn-group { flex-direction: column; width: 100%; }
+      .btn { width: 100%; padding: 12px; font-size: 16px; }
+      .hint-text { min-width: auto; width: 100%; }
+      .sheet-paper { width: 100%; padding: 10px; min-height: auto; border: 1px solid #efebe9; }
+      .tables-container { flex-direction: column; }
+      .table-column { width: 100%; margin-bottom: 20px; }
+      th { font-size: 12px; height: auto; } td { height: 35px; }
+      .patrol-guard-input { flex-direction: column; align-items: flex-start; }
+      .revision-date { position: static; text-align: right; margin-top: 10px; display: block; }
+    }
+  </style>
+</head>
+<body>
+  <div id="toast-container"></div>
+  <!-- 頂部控制列 -->
+  <div class="control-bar">
+    <div class="control-group">
+      <label><b>輸入密碼：</b></label>
+      <div class="password-wrapper">
+        <input type="password" id="userPassword" placeholder="請輸入自訂密碼" onkeydown="handleEnter(event)">
+        <span id="toggleBtn" class="toggle-password" onclick="togglePasswordVisibility()">👁️</span>
+      </div>
+    </div>
+    <!-- 說明文字 -->
+    <div class="hint-text">
+      <div>💡 第一次使用，<strong style="color: red;">(輸入密碼、年、月、名字)</strong> 一定要輸入，並按「儲存資料」。</div>
+      <div>若密碼顯示「已有人使用」，請更換一組。</div>
+      <div style="margin-top: 4px;">📂 下次使用請輸入相同密碼並按下「Enter」或右側「讀取資料」即可還原。</div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-save" onclick="handleSave()">💾 儲存資料</button>
+      <button class="btn btn-load" onclick="handleLoad()">🔍 讀取資料</button>
+      <button class="btn btn-print" onclick="printSheet()">🖨️ 列印 / 另存 PDF</button>
+    </div>
+  </div>
+  
+  <div class="sheet-paper">
+    <div class="header-section">
+      <div class="main-title">
+        高雄鳳山區瑞興國小 
+        <select id="yearSelect" class="date-select" onchange="fetchHolidaysAndRender()"></select> 年 
+        <select id="monthSelect" class="date-select" onchange="renderSheet()"></select> 月份教師加班時間表
+      </div>
+      <div class="sub-info">
+        <div></div> 
+        <div>姓名：<input type="text" id="teacherName" class="input-line"></div>
+      </div>
+    </div>
+    <div class="legend-box">
+      <span class="legend-row">加班事由：（Ａ：行政工作；Ｂ：班級級務；Ｃ：學生團隊協助；Ｄ：學生行為討論）</span>
+      <span class="legend-row">　　　　　（Ｅ：教學行政協助；Ｆ：校園公佈欄維護；Ｇ:校內活動支援；Ｈ：其他）</span>
+    </div>
+    <div class="warning-text">
+      ⚠️ 每年放假日情況不一，點按日期選擇上班日或放假日，就會鎖定或解除。
+    </div>
+    <div class="tables-container">
+      <div class="table-column">
+        <table id="tableLeft">
+          <thead>
+            <tr>
+              <th width="12%">日</th>
+              <th width="18%"><div class="time-vertical"><span>07:30</span><span class="time-sep">|</span><span>07:40</span></div><span class="th-min">(10分)</span></th>
+              <th width="18%"><div class="time-vertical"><span>07:40</span><span class="time-sep">|</span><span>07:50</span></div><span class="th-min">(10分)</span></th>
+              <th width="18%"><div class="time-vertical"><span>15:50</span><span class="time-sep">|</span><span>16:10</span></div><span class="th-min">(20分)</span></th>
+              <th width="18%"><div class="time-vertical"><span>16:10</span><span class="time-sep">|</span><span>16:30</span></div><span class="th-min">(20分)</span></th>
+              <th width="16%">加班<br>分鐘數</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyLeft"></tbody>
+        </table>
+      </div>
+      <div class="table-column">
+        <table id="tableRight">
+          <thead>
+            <tr>
+              <th width="12%">日</th>
+              <th width="18%"><div class="time-vertical"><span>07:30</span><span class="time-sep">|</span><span>07:40</span></div><span class="th-min">(10分)</span></th>
+              <th width="18%"><div class="time-vertical"><span>07:40</span><span class="time-sep">|</span><span>07:50</span></div><span class="th-min">(10分)</span></th>
+              <th width="18%"><div class="time-vertical"><span>15:50</span><span class="time-sep">|</span><span>16:10</span></div><span class="th-min">(20分)</span></th>
+              <th width="18%"><div class="time-vertical"><span>16:10</span><span class="time-sep">|</span><span>16:30</span></div><span class="th-min">(20分)</span></th>
+              <th width="16%">加班<br>分鐘數</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyRight"></tbody>
+        </table>
+      </div>
+    </div>
+    
+    <!-- 30日下方的「快捷控制列」 -->
+    <div class="middle-control-bar">
+      <div class="btn-group">
+        <button class="btn btn-save" onclick="handleSave()">💾 儲存資料</button>
+        <button class="btn btn-load" onclick="handleLoad()">🔍 讀取資料</button>
+        <button class="btn btn-print" onclick="printSheet()">🖨️ 列印 / 另存 PDF</button>
+      </div>
+    </div>
+
+    <div class="footer-section">
+      <div class="patrol-guard-input">
+        <div style="display:flex; align-items:center;">
+          <span id="chkPatrol" class="chk-icon" onclick="togglePatrol()">□</span>
+          校園巡查：
+          <select id="pStart" class="tiny-select" onchange="updateLocks()"></select> 日 到 
+          <select id="pEnd" class="tiny-select" onchange="updateLocks()"></select> 日，共2小時。
+        </div>
+        <div style="display:flex; align-items:center;">
+          <span id="chkGuard" class="chk-icon" onclick="toggleGuard()">□</span>
+          校園導護：
+          <select id="gStart" class="tiny-select" onchange="updateLocks()"></select> 日 到 
+          <select id="gEnd" class="tiny-select" onchange="updateLocks()"></select> 日，共4小時。
+        </div>
+      </div>
+      <div style="line-height: 1.6;">
+        申請人覈實登記加班時數，合計： <span id="displayTotalHours" class="total-number">0</span> 小時（未滿１小時則不計算）<br>
+        加班補休時數 ( 加班時數 1.5 倍 ) ： <span id="displayCompHours" class="total-number">0</span> 小時（未滿１小時，以1小時計）
+      </div>
+      <div class="signature-area">
+        <div class="sig-box">
+          <div class="sig-title">導護加班</div>
+          <div class="sig-title">會辦學務處</div>
+          <div class="sig-space"></div>
+        </div>
+        <div class="sig-box">
+          <div class="sig-title">單位主管</div>
+          <div class="sig-title">審查核章</div>
+          <div class="sig-space"></div>
+        </div>
+        <div class="sig-box">
+          <div class="sig-title">校長核章</div>
+          <div class="sig-space"></div>
+          <div class="sig-bottom"></div>
+        </div>
+      </div>
+    </div>
+    <div class="note-section">
+      💡 教師請務必覈實登錄加班／時間（上午 or 下午請假需自行扣除）如該時段已有領有津貼、費用者請勿重複申請加班。<br>
+      每月掃瞄或拍照本統計表後，以附件方式上傳線上差勤系統，正本請自行留存。
+    </div>
+    <div class="revision-date">115.1.22修訂</div>
+  </div>
+  
+  <script>
+    // =========================================================================
+    // ⚙️ 🚨 步驟四：請將下方的大括號內容替換成您在 Firebase Console 複製的 Config 憑證！
+    // =========================================================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyDLQ-6fHReJuWTV0xwWzeTO96ehG-H8o1o",
+  authDomain: "overtime-6ab38.firebaseapp.com",
+  databaseURL: "https://overtime-6ab38-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "overtime-6ab38",
+  storageBucket: "overtime-6ab38.firebasestorage.app",
+  messagingSenderId: "457417630728",
+  appId: "1:457417630728:web:b4f82d2acbd215fbd55dbd"
+
+    };
+
+    // 測試防呆模擬器
+    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+       alert("🚨 提醒：您尚未設定 Firebase Config 金鑰！請依照操作指南在 HTML 第 516 行填入您的憑證，系統才能正常啟用雲端儲存喔！");
+    } else {
+       firebase.initializeApp(firebaseConfig);
+    }
+    const database = (firebaseConfig.apiKey !== "YOUR_API_KEY") ? firebase.database() : null;
+
+    const REASONS = [
+      {code:'', label:''},
+      {code:'A', label:'A: 行政工作'},
+      {code:'B', label:'B: 班級級務'},
+      {code:'C', label:'C: 學生團隊協助'},
+      {code:'D', label:'D: 學生行為討論'},
+      {code:'E', label:'E: 教學行政協助'},
+      {code:'F', label:'F: 校園公佈欄維護'},
+      {code:'G', label:'G: 校內活動支援'},
+      {code:'H', label:'H: 其他'},
+      {code:'A_ALL', label:'🚀 A: 四格 (一鍵填滿)'},
+      {code:'B_ALL', label:'🚀 B: 四格 (一鍵填滿)'},
+      {code:'C_ALL', label:'🚀 C: 四格 (一鍵填滿)'},
+      {code:'D_ALL', label:'🚀 D: 四格 (一鍵填滿)'},
+      {code:'H_ALL', label:'🚀 H: 四格 (一鍵填滿)'}, 
+      {code:'CLEAR', label:'❌ 清除此格'}
+    ];
+    const SLOT_MINUTES = [10, 10, 20, 20]; 
+    const WEEK_DAYS = ['(日)', '(一)', '(二)', '(三)', '(四)', '(五)', '(六)'];
+    let manualPatrol = false;
+    let manualGuard = false;
+    let loadedPassword = null; 
+    let fetchedHolidays = {}; 
+
+    // 🆕 核心修正：年月份一律保持空白，提供最佳載入彈性
+    window.onload = function() {
+      initDateSelects();
+      initDayDropdowns();
+      renderSheet(); 
+    };
+
+    function initDateSelects() {
+      const yearSelect = document.getElementById('yearSelect');
+      const monthSelect = document.getElementById('monthSelect');
+      yearSelect.innerHTML = '<option value=""></option>';
+      for (let y = 115; y <= 125; y++) { yearSelect.add(new Option(y, y)); }
+      monthSelect.innerHTML = '<option value=""></option>';
+      for (let m = 1; m <= 12; m++) { monthSelect.add(new Option(m, m)); }
+      
+      yearSelect.value = "";
+      monthSelect.value = "";
+    }
+
+    function initDayDropdowns() {
+      const ids = ['pStart', 'pEnd', 'gStart', 'gEnd'];
+      ids.forEach(id => {
+        const select = document.getElementById(id);
+        select.innerHTML = '<option value=""></option>';
+        for(let i=1; i<=31; i++) select.add(new Option(i, i));
+      });
+    }
+
+    function getHolidaysByYearLocal(rocYear) {
+      const staticHolidays = {
+        "115": {
+          "1/1": "元旦", "2/16": "除夕", "2/17": "春節", "2/18": "春節", "2/19": "春節", "2/20": "春節補假",
+          "2/28": "和平紀念日", "4/4": "兒童節", "4/5": "清明節", "5/1": "勞動節", "6/19": "端午節",
+          "9/25": "中秋節", "9/28": "教師節", "10/10": "國慶日", "12/25": "行憲紀念日"
+        },
+        "116": {
+          "1/1": "元旦", "2/6": "除夕", "2/7": "春節", "2/8": "春節", "2/9": "春節", "2/10": "春節補假",
+          "2/28": "和平紀念日", "4/4": "兒童節", "4/5": "清明節", "5/1": "勞動節", "6/9": "端午節",
+          "9/15": "中秋節", "10/10": "國慶日", "12/25": "行憲紀念日"
+        }
+      };
+      return staticHolidays[rocYear] || {};
+    }
+
+    function fetchHolidaysAndRender(onCompleteCallback) {
+      const year = document.getElementById('yearSelect').value;
+      if (!year) { 
+        renderSheet(); 
+        if (onCompleteCallback) onCompleteCallback();
+        return; 
+      }
+      fetchedHolidays = getHolidaysByYearLocal(year);
+      renderSheet();
+      if (onCompleteCallback) onCompleteCallback();
+    }
+
+    function renderSheet() {
+      const yVal = document.getElementById('yearSelect').value;
+      const mVal = document.getElementById('monthSelect').value;
+      let year, month, daysInMonth;
+      let isValidDate = false;
+      if (yVal && mVal) {
+        year = parseInt(yVal) + 1911; 
+        month = parseInt(mVal);
+        daysInMonth = new Date(year, month, 0).getDate();
+        isValidDate = true;
+      } else {
+        daysInMonth = 31; isValidDate = false;
+      }
+      const left = document.getElementById('tbodyLeft');
+      const right = document.getElementById('tbodyRight');
+      left.innerHTML = ''; right.innerHTML = '';
+
+      for (let day = 1; day <= 31; day++) {
+        const isExceed = day > daysInMonth;
+        let isWeekend = false;
+        let dayOfWeekText = "";
+        let publicHolidayName = "";
+        if (isValidDate && !isExceed) {
+            const dateObj = new Date(year, month - 1, day);
+            const dayOfWeek = dateObj.getDay(); 
+            isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+            dayOfWeekText = WEEK_DAYS[dayOfWeek];
+            
+            const key = month + "/" + day;
+            if (fetchedHolidays[key]) { 
+              publicHolidayName = fetchedHolidays[key];
+              isWeekend = true; 
+            }
+        }
+        
+        const row = document.createElement('tr');
+        if (isWeekend) row.classList.add('weekend-row');
+        const tdDay = document.createElement('td');
+        tdDay.className = 'day-cell';
+        tdDay.onclick = function(e) { toggleHolidaySelect(day, e); };
+        
+        if (!isExceed) {
+          const redClass = isWeekend ? 'text-red' : '';
+          
+          let innerHTML = `<div style="font-size:12px; font-weight:bold; line-height:1.2;">`;
+          innerHTML += `<span class="day-num ${redClass}">${day}</span>`;
+          if (dayOfWeekText) innerHTML += ` <span class="day-week ${redClass}" style="font-size:10px; font-weight:normal; display:inline;">${dayOfWeekText}</span>`;
+          innerHTML += `</div>`;
+          
+          if (publicHolidayName) {
+            innerHTML += `<div class="holiday-text" style="font-size:9px; margin-top:1px;">${publicHolidayName}</div>`;
+          }
+          
+          innerHTML += `
+            <select id="holiday_d${day}" class="holiday-select" onclick="event.stopPropagation()" onchange="updateLocks();">
+              <option value=""></option>
+              <option value="WORKDAY">平常日</option>
+              <option value="HOLIDAY">放假日</option>
+            </select>
+          `;
+          tdDay.innerHTML = innerHTML;
+        }
+        row.appendChild(tdDay);
+
+        for (let i = 0; i < 4; i++) {
+          const td = document.createElement('td');
+          if (!isExceed) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'slot-wrapper';
+            const select = document.createElement('select');
+            select.id = `d${day}_s${i}`;
+            select.className = 'slot-select';
+            REASONS.forEach(r => {
+              const opt = document.createElement('option');
+              opt.value = r.code; opt.innerText = r.label || r.code; select.appendChild(opt);
+            });
+            const display = document.createElement('div');
+            display.id = `d${day}_disp${i}`;
+            display.className = 'slot-display';
+            
+            select.onchange = function() {
+               if (this.value === 'CLEAR') { 
+                  this.value = ''; 
+                  display.innerText = ''; 
+               } else if (this.value.endsWith('_ALL')) {
+                  const targetCode = this.value.split('_')[0]; 
+                  for (let j = 0; j < 4; j++) {
+                     const targetSelect = document.getElementById(`d${day}_s${j}`);
+                     if (targetSelect && !targetSelect.disabled) {
+                        targetSelect.value = targetCode;
+                        const targetDisp = document.getElementById(`d${day}_disp${j}`);
+                        if (targetDisp) targetDisp.innerText = targetCode;
+                     }
+                  }
+               } else { 
+                  display.innerText = this.value; 
+               }
+               calculateDay(day);
+            };
+            if (isWeekend) { select.disabled = true; td.classList.add('cell-locked'); }
+            wrapper.append(display, select);
+            td.appendChild(wrapper);
+          }
+          row.appendChild(td);
+        }
+        const tdTotal = document.createElement('td');
+        tdTotal.id = `d${day}_total`;
+        tdTotal.className = 'total-cell'; 
+        tdTotal.textContent = isExceed ? '' : '0';
+        row.appendChild(tdTotal);
+        if (day <= 16) left.appendChild(row); else right.appendChild(row);
+      }
+      
+      // 補白對稱機制
+      const leftRowCount = left.children.length; 
+      const rightRowCount = right.children.length; 
+      const padCount = leftRowCount - rightRowCount;
+      for (let p = 0; p < padCount; p++) {
+         const dummyRow = document.createElement('tr');
+         dummyRow.classList.add('weekend-row');
+         for (let i = 0; i < 6; i++) {
+            const td = document.createElement('td');
+            td.innerHTML = '&nbsp;';
+            td.classList.add('cell-locked');
+            dummyRow.appendChild(td);
+         }
+         right.appendChild(dummyRow);
+      }
+      
+      if (isValidDate) updateLocks(); 
+      calculateAll();
+    }
+
+    function toggleHolidaySelect(day, event) {
+      document.querySelectorAll('.holiday-select').forEach(el => {
+        if (!el.value) el.classList.remove('active');
+      });
+      const select = document.getElementById(`holiday_d${day}`);
+      if (select) {
+        select.classList.add('active');
+        event.stopPropagation();
+      }
+    }
+    
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('.day-cell')) {
+        document.querySelectorAll('.holiday-select').forEach(el => {
+          if (!el.value) el.classList.remove('active');
+        });
+      }
+    });
+
+    function calculateDay(day) {
+      let total = 0;
+      for (let i = 0; i < 4; i++) {
+        const el = document.getElementById(`d${day}_s${i}`);
+        if (el && el.value) total += SLOT_MINUTES[i];
+      }
+      const totalEl = document.getElementById(`d${day}_total`);
+      if(totalEl) totalEl.textContent = total;
+      calculateAll();
+    }
+
+    function calculateAll() {
+      let grand = 0;
+      for (let d = 1; d <= 31; d++) {
+        const el = document.getElementById(`d${d}_total`);
+        if (el && el.textContent) {
+          const val = parseInt(el.textContent);
+          if(!isNaN(val)) grand += val;
+        }
+      }
+      let totalHours = Math.floor(grand / 60);
+      const pStart = parseInt(document.getElementById('pStart').value) || 0;
+      const pEnd = parseInt(document.getElementById('pEnd').value) || 0;
+      const isPatrol = (pStart > 0 && pEnd > 0) || manualPatrol;
+      const gStart = parseInt(document.getElementById('gStart').value) || 0;
+      const gEnd = parseInt(document.getElementById('gEnd').value) || 0;
+      const isGuard = (gStart > 0 && gEnd > 0) || manualGuard;
+      
+      if (isPatrol) totalHours += 2;
+      if (isGuard) totalHours += 4;
+      
+      document.getElementById('displayTotalHours').textContent = totalHours;
+      document.getElementById('displayCompHours').textContent = Math.ceil(totalHours * 1.5);
+    }
+
+    function togglePatrol() {
+      const chkP = document.getElementById('chkPatrol');
+      const isCurrentlyActive = chkP.classList.contains('chk-active');
+      if (isCurrentlyActive) {
+         document.getElementById('pStart').value = "";
+         document.getElementById('pEnd').value = "";
+         manualPatrol = false;
+      } else {
+         manualPatrol = true;
+      }
+      updateLocks();
+      calculateAll();
+    }
+
+    function toggleGuard() {
+      const chkG = document.getElementById('chkGuard');
+      const isCurrentlyActive = chkG.classList.contains('chk-active');
+      if (isCurrentlyActive) {
+         document.getElementById('gStart').value = "";
+         document.getElementById('gEnd').value = "";
+         manualGuard = false;
+      } else {
+         manualGuard = true;
+      }
+      updateLocks();
+      calculateAll();
+    }
+
+    function updateLocks() {
+      const pStart = parseInt(document.getElementById('pStart').value) || 0;
+      const pEnd = parseInt(document.getElementById('pEnd').value) || 0;
+      const gStart = parseInt(document.getElementById('gStart').value) || 0;
+      const gEnd = parseInt(document.getElementById('gEnd').value) || 0;
+      const isPatrol = (pStart > 0 && pEnd > 0) || manualPatrol;
+      const isGuard = (gStart > 0 && gEnd > 0) || manualGuard;
+      
+      const chkP = document.getElementById('chkPatrol');
+      const chkG = document.getElementById('chkGuard');
+      chkP.textContent = isPatrol ? "☑" : "□";
+      chkP.className = isPatrol ? "chk-icon chk-active" : "chk-icon";
+      chkG.textContent = isGuard ? "☑" : "□";
+      chkG.className = isGuard ? "chk-icon chk-active" : "chk-icon";
+      
+      const yVal = document.getElementById('yearSelect').value;
+      const mVal = document.getElementById('monthSelect').value;
+      
+      if (!yVal || !mVal) return;
+      const year = parseInt(yVal) + 1911;
+      const month = parseInt(mVal);
+      const isWorkDay = (d) => { let date = new Date(year, month - 1, d); let w = date.getDay(); return (w !== 0 && w !== 6); };
+      let lockMap = {};
+      const applyRule = (s, e) => {
+        if (s > e) return;
+        let count = 0;
+        for (let d = s; d <= e; d++) {
+          if (!isWorkDay(d)) continue;
+          count++;
+          if (!lockMap[d]) lockMap[d] = [false, false, false, false];
+          if (count === 1) { lockMap[d][1] = true; lockMap[d][2] = true; }
+          else if (count >= 2 && count <= 5) { lockMap[d][0] = true; lockMap[d][1] = true; lockMap[d][2] = true; }
+          else if (count === 6) { lockMap[d][0] = true; lockMap[d][1] = true; }
+        }
+      };
+      if (pStart > 0 && pEnd > 0) applyRule(pStart, pEnd);
+      if (gStart > 0 && gEnd > 0) applyRule(gStart, gEnd);
+
+      for (let d = 1; d <= 31; d++) {
+        const slot0 = document.getElementById(`d${d}_s0`);
+        if (!slot0) continue;
+        
+        const holidaySelect = document.getElementById(`holiday_d${d}`);
+        const isManualHoliday = holidaySelect && holidaySelect.value === 'HOLIDAY';
+        const isManualWorkday = holidaySelect && holidaySelect.value === 'WORKDAY';
+        
+        const key = month + "/" + d;
+        const publicHolidayName = fetchedHolidays[key];
+        const isPublicHoliday = !!publicHolidayName;
+        
+        let locks = lockMap[d] || [false, false, false, false];
+        
+        let shouldLock = false;
+        if (isManualHoliday) {
+          shouldLock = true;
+        } else if (isManualWorkday) {
+          shouldLock = false; 
+        } else if (isPublicHoliday || !isWorkDay(d)) {
+          shouldLock = true;
+        }
+
+        const row = slot0.parentElement.parentElement.parentElement; 
+        const dayCell = row ? row.querySelector('.day-cell') : null;
+        const dayNumSpan = dayCell ? dayCell.querySelector('.day-num') : null;
+        const dayWeekSpan = dayCell ? dayCell.querySelector('.day-week') : null;
+
+        if (holidaySelect) {
+           if (isManualWorkday) {
+              holidaySelect.classList.add('active');
+              holidaySelect.style.background = "#e8f5e9";
+              holidaySelect.style.color = "#2e7d32";
+              holidaySelect.style.borderColor = "#2e7d32";
+           } else if (isManualHoliday) {
+              holidaySelect.classList.add('active');
+              holidaySelect.style.background = "#ffebee";
+              holidaySelect.style.color = "#c62828";
+              holidaySelect.style.borderColor = "#c62828";
+           } else {
+              if (document.activeElement !== holidaySelect) {
+                holidaySelect.classList.remove('active');
+              }
+              holidaySelect.style.background = "#fff";
+              holidaySelect.style.color = "var(--text-color)";
+              holidaySelect.style.borderColor = "var(--border-color)";
+           }
+        }
+
+        if (shouldLock) {
+           locks = [true, true, true, true];
+           if (row) row.classList.add('weekend-row');
+           if (dayNumSpan) dayNumSpan.classList.add('text-red');
+           if (dayWeekSpan) dayWeekSpan.classList.add('text-red');
+        } else {
+           if (row) row.classList.remove('weekend-row'); 
+           if (dayNumSpan) dayNumSpan.classList.remove('text-red');
+           if (dayWeekSpan) dayWeekSpan.classList.remove('text-red');
+        }
+
+        for (let i = 0; i < 4; i++) {
+          const el = document.getElementById(`d${d}_s${i}`);
+          const wrapper = el.parentElement;
+          const parentTd = wrapper.parentElement;
+          const displayEl = document.getElementById(`d${d}_disp${i}`);
+          
+          if (locks[i]) {
+            el.value = ''; el.disabled = true;
+            if(displayEl) displayEl.innerText = '';
+            parentTd.classList.add('cell-locked');
+          } else {
+            el.disabled = false; parentTd.classList.remove('cell-locked');
+          }
+        }
+        calculateDay(d);
+      }
+    }
+
+    function printSheet() {
+      const sheet = document.querySelector('.sheet-paper');
+      const clone = sheet.cloneNode(true);
+      
+      const originalInputs = sheet.querySelectorAll('input[type="text"]');
+      const clonedInputs = clone.querySelectorAll('input[type="text"]');
+      originalInputs.forEach((originalInput, index) => {
+        const clonedInput = clonedInputs[index];
+        const span = document.createElement('span');
+        span.className = originalInput.className;
+        span.style.display = "inline-block";
+        span.style.minWidth = originalInput.style.width || "140px";
+        span.style.borderBottom = "1px solid #5d4037";
+        span.style.padding = "0 10px";
+        span.style.fontSize = "18px";
+        span.style.fontWeight = "bold";
+        span.textContent = originalInput.value || "　　　　　";
+        clonedInput.parentNode.replaceChild(span, clonedInput);
+      });
+
+      const originalSelects = sheet.querySelectorAll('select');
+      const clonedSelects = clone.querySelectorAll('select');
+      clonedSelects.forEach((clonedSelect, index) => {
+        const originalSelect = originalSelects[index];
+        if (clonedSelect.id === 'yearSelect' || clonedSelect.id === 'monthSelect' || clonedSelect.classList.contains('tiny-select')) {
+          const span = document.createElement('span');
+          span.className = clonedSelect.className;
+          span.style.fontWeight = "bold";
+          span.style.padding = "0 4px";
+          span.textContent = originalSelect.value || "　";
+          clonedSelect.parentNode.replaceChild(span, clonedSelect);
+        } else {
+          clonedSelect.style.display = 'none'; 
+        }
+      });
+
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert("⚠️ 列印視窗被瀏覽器封鎖了！請於瀏覽器網址列右側，允許本網頁的「彈出式視窗與重新導向」，再按一次列印即可順利執行！");
+        return;
+      }
+      
+      let styles = '';
+      document.querySelectorAll('style, link[rel="stylesheet"]').forEach(el => {
+        styles += el.outerHTML;
+      });
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="zh-Hant-TW">
+        <head>
+          <meta charset="UTF-8">
+          <title>教師加班時間表_列印預覽</title>
+          ${styles}
+          <style>
+            body { background: none; padding: 0; margin: 0; }
+            .sheet-paper { 
+              box-shadow: none !important; 
+              margin: 0 auto !important; 
+              width: 210mm !important; 
+              padding: 0 !important; 
+              border: none !important; 
+            }
+            .control-bar, .middle-control-bar, .holiday-select, .slot-select, .warning-text { 
+              display: none !important; 
+            }
+            @media print {
+              @page { 
+                size: A4 portrait; 
+                margin: 6mm 10mm !important; 
+              }
+              body { background: none; padding: 0; margin: 0; }
+              .sheet-paper { 
+                box-shadow: none !important; 
+                margin: 0 !important; 
+                width: 100% !important; 
+                padding: 0 !important; 
+                border: none !important; 
+                height: auto !important; 
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${clone.outerHTML}
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+                window.close();
+              }, 300);
+            };
+          <\/script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+
+    function togglePasswordVisibility() {
+      const pwdInput = document.getElementById('userPassword');
+      const toggleBtn = document.getElementById('toggleBtn');
+      if (pwdInput.type === 'password') { pwdInput.type = 'text'; pwdInput.classList.add('pwd-visible'); toggleBtn.innerText = '🙈'; } else { pwdInput.type = 'password'; pwdInput.classList.remove('pwd-visible'); toggleBtn.innerText = '👁️'; }
+    }
+
+    function handleEnter(e) { if (e.key === "Enter") handleLoad(); }
+
+    function showToast(msg) {
+      const container = document.getElementById('toast-container');
+      const div = document.createElement('div');
+      div.className = 'toast-msg show';
+      div.textContent = msg;
+      container.appendChild(div);
+      setTimeout(() => { div.classList.remove('show'); setTimeout(() => { if(div.parentNode) div.parentNode.removeChild(div); }, 300); }, 2500);
+    }
+
+    function getFormData() {
+      const data = {
+        password: document.getElementById('userPassword').value,
+        teacherName: document.getElementById('teacherName').value,
+        year: document.getElementById('yearSelect').value,
+        month: document.getElementById('monthSelect').value,
+        pStart: document.getElementById('pStart').value,
+        pEnd: document.getElementById('pEnd').value,
+        gStart: document.getElementById('gStart').value,
+        gEnd: document.getElementById('gEnd').value,
+        totalHours: document.getElementById('displayTotalHours').textContent,
+        compHours: document.getElementById('displayCompHours').textContent,
+        slots: {},
+        holidays: {} 
+      };
+      for(let d=1; d<=31; d++) {
+        if(!document.getElementById(`d${d}_s0`)) continue;
+        data.slots[d] = [];
+        for(let i=0; i<4; i++) data.slots[d].push(document.getElementById(`d${d}_s${i}`).value);
+        const hSelect = document.getElementById(`holiday_d${d}`);
+        if(hSelect) data.holidays[d] = hSelect.value;
+      }
+      return data;
+    }
+
+    function handleSave() {
+      if (!database) { alert('請先設定 Firebase Config 憑證才能儲存喔！'); return; }
+      const pwd = document.getElementById('userPassword').value.trim();
+      const name = document.getElementById('teacherName').value.trim();
+      if (!pwd || !name) { alert('請輸入密碼與姓名！'); return; }
+      
+      const year = document.getElementById('yearSelect').value;
+      const month = document.getElementById('monthSelect').value;
+      if (!year || !month) { alert('請選取年、月份！'); return; }
+
+      const data = getFormData();
+      
+      database.ref('passwords/' + pwd).once('value').then(snapshot => {
+         const existingName = snapshot.val();
+         if (existingName && existingName !== name) {
+            alert("❌ 此密碼已由其他老師登錄使用，請更換一組密碼。");
+            return;
+         }
+         
+         database.ref('passwords/' + pwd).set(name).then(() => {
+            return database.ref('records/' + pwd + '/' + year + '_' + month).set({
+               ...data,
+               lastUpdated: new Date().toISOString()
+            });
+         }).then(() => {
+            loadedPassword = pwd;
+            showToast("💾 資料儲存成功！");
+         }).catch(err => {
+            alert("儲存失敗：" + err.message);
+         });
+      });
+    }
+
+    // 🆕 核心修正：只要密碼正確就直接秒速讀取！智慧比對與還原特定/最新歷史年月！
+    function handleLoad() {
+      if (!database) { alert('請先設定 Firebase Config 憑證才能讀取喔！'); return; }
+      const pwd = document.getElementById('userPassword').value.trim();
+      if (!pwd) { alert('請輸入密碼！'); return; }
+      
+      database.ref('records/' + pwd).once('value').then(snapshot => {
+         const allRecords = snapshot.val();
+         if (!allRecords) {
+            alert("❌ 找不到此密碼的存報紀錄，請確認密碼是否正確。");
+            return;
+         }
+         
+         let targetRecord = null;
+         const selectedYear = document.getElementById('yearSelect').value;
+         const selectedMonth = document.getElementById('monthSelect').value;
+         
+         // 1. 如果老師已經先選了特定的年月，則精準載入該年月份
+         if (selectedYear && selectedMonth) {
+            const key = selectedYear + '_' + selectedMonth;
+            if (allRecords[key]) {
+               targetRecord = allRecords[key];
+            }
+         }
+         
+         // 2. 如果選單是空白的（預設），則自動幫他搜尋出「最後更新時間最新（lastUpdated）」的加班表
+         if (!targetRecord) {
+            let latestTime = 0;
+            for (let k in allRecords) {
+               const rec = allRecords[k];
+               const recTime = rec.lastUpdated ? new Date(rec.lastUpdated).getTime() : 0;
+               if (recTime >= latestTime) {
+                  latestTime = recTime;
+                  targetRecord = rec;
+               }
+            }
+         }
+         
+         if (targetRecord) {
+            populateForm(targetRecord);
+            loadedPassword = pwd;
+            showToast(`✨ 成功載入 ${targetRecord.year} 年 ${targetRecord.month} 月的歷史加班紀錄！`);
+         } else {
+            alert("❌ 找不到此密碼對應的歷史紀錄。");
+         }
+      }).catch(err => {
+         alert("讀取失敗：" + err.message);
+      });
+    }
+
+    function populateForm(data) {
+      document.getElementById('teacherName').value = data.teacherName;
+      document.getElementById('yearSelect').value = data.year;
+      document.getElementById('monthSelect').value = data.month;
+      manualPatrol = false; manualGuard = false;
+      
+      fetchHolidaysAndRender(function() {
+          document.getElementById('pStart').value = data.pStart;
+          document.getElementById('pEnd').value = data.pEnd;
+          document.getElementById('gStart').value = data.gStart;
+          document.getElementById('gEnd').value = data.gEnd;
+          if (data.holidays) {
+            for (let d in data.holidays) {
+               const hSelect = document.getElementById(`holiday_d${d}`);
+               if(hSelect) hSelect.value = data.holidays[d];
+            }
+          }
+          if (data.slots) {
+            for (let d in data.slots) {
+              const vals = data.slots[d];
+              for (let i = 0; i < 4; i++) {
+                const el = document.getElementById(`d${d}_s${i}`);
+                if (el) {
+                  const val = (vals && vals[i] !== undefined) ? vals[i] : "";
+                  el.value = val;
+                  const disp = document.getElementById(`d${d}_disp${i}`);
+                  if(disp) disp.innerText = val;
+                }
+              }
+              calculateDay(d);
+            }
+          }
+          updateLocks(); 
+          calculateAll();
+      });
+    }
+  </script>
+</body>
+</html>
