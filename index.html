@@ -5,11 +5,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>高雄鳳山區瑞興國小-教師加班時間表</title>
-  
-  <!-- 核心新增：載入 Firebase CDN 獨立函式庫，完全脫離 Apps Script 束縛 -->
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
-
   <style>
     /* === 全域變數與配色 (溫馨暖色系) === */
     :root {
@@ -25,12 +20,6 @@
       --btn-load: #ffb74d;      /* 按鈕：柔和橘 */
       --btn-print: #64b5f6;     /* 按鈕：列印藍 */
     }
-    
-    /* 強制全域使用 border-box 模型，確保寬高計算精準無溢出 */
-    *, *:before, *:after {
-      box-sizing: border-box;
-    }
-    
     body {
       font-family: "Microsoft JhengHei", "PMingLiU", sans-serif;
       background-color: var(--bg-color);
@@ -161,26 +150,17 @@
     }
     .tables-container { display: flex; gap: 10px; }
     .table-column { flex: 1; }
-    
-    table { 
-      width: 100%; 
-      border-collapse: collapse; 
-      font-size: 12px; 
-      table-layout: fixed; 
-      border: 1px solid var(--border-color); 
-    }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
     
     th {
       background-color: var(--header-bg); font-weight: bold; color: var(--text-color); 
       line-height: 1.2; padding: 6px 0;
       height: auto; white-space: normal; vertical-align: middle;
       border: 1px solid var(--border-color);
-      background-clip: padding-box; 
     }
     td {
       border: 1px solid var(--border-color); text-align: center;
       height: 35px; padding: 0; overflow: visible; white-space: nowrap;
-      background-clip: padding-box; 
     }
     
     .time-vertical {
@@ -189,13 +169,13 @@
     .time-sep { font-size: 10px; line-height: 0.8; margin: 1px 0; font-weight: normal; }
     .th-min { font-size: 10px; font-weight: normal; display: block; margin-top: 2px; }
     
-    /* 日期格子樣式 */
+    /* 📅 🆕 完美修復：恢復原生 TD 行為，消除 flex 屬性，確保 100% 對齊表格格線 */
     .day-cell { 
       line-height: 1.2; 
       position: relative; 
       cursor: pointer;
       padding: 4px 2px !important;
-      vertical-align: middle;
+      vertical-align: middle; /* 採用原生垂直置中 */
       user-select: none;
     }
     .day-num { font-size: 13px; font-weight: bold; color: #000; }
@@ -331,11 +311,9 @@
         width: 100% !important; 
         border-collapse: collapse !important; 
         font-size: 12px !important;
-        border: 1px solid #5d4037 !important; 
       } 
       th, td { 
         border: 1px solid #5d4037 !important; 
-        background-clip: padding-box !important; 
       }
       th { 
         height: auto !important; 
@@ -543,27 +521,66 @@
   </div>
   
   <script>
-    // =========================================================================
-    // ⚙️ 🚨 步驟四：請將下方的大括號內容替換成您在 Firebase Console 複製的 Config 憑證！
-    // =========================================================================
-    const firebaseConfig = {
-      apiKey: "AIzaSyDLQ-6fHReJuWTV0xwWzeTO96ehG-H8o1o",
-  authDomain: "overtime-6ab38.firebaseapp.com",
-  databaseURL: "https://overtime-6ab38-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "overtime-6ab38",
-  storageBucket: "overtime-6ab38.firebasestorage.app",
-  messagingSenderId: "457417630728",
-  appId: "1:457417630728:web:b4f82d2acbd215fbd55dbd"
-
-    };
-
-    // 測試防呆模擬器
-    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-       alert("🚨 提醒：您尚未設定 Firebase Config 金鑰！請依照操作指南在 HTML 第 516 行填入您的憑證，系統才能正常啟用雲端儲存喔！");
-    } else {
-       firebase.initializeApp(firebaseConfig);
+    // === 預覽模式模擬 (本機離線測試用) ===
+    if (typeof google === 'undefined') {
+      var google = {
+        script: {
+          run: {
+            withSuccessHandler: function(cb) {
+              return {
+                withFailureHandler: function(fcb) { return this; },
+                saveData: function(d) {
+                  setTimeout(() => cb({ success: true }), 100);
+                },
+                loadData: function(pwd, year, month) {
+                  const targetYear = year || document.getElementById('yearSelect').value || "115";
+                  const targetMonth = month || document.getElementById('monthSelect').value || "3";
+                  const mockData = {
+                    teacherName: "林瑞興 老師",
+                    year: targetYear,
+                    month: targetMonth,
+                    pStart: "3",
+                    pEnd: "14",
+                    gStart: "17",
+                    gEnd: "28",
+                    slots: {
+                      "3": ["", "A", "", "B"],
+                      "5": ["C", "", "", "D"],
+                      "10": ["", "", "E", "F"],
+                      "17": ["", "G", "H", ""],
+                      "24": ["A", "B", "", ""]
+                    },
+                    holidays: {
+                      "28": "HOLIDAY"
+                    }
+                  };
+                  setTimeout(() => cb({ 
+                    success: true, 
+                    data: mockData, 
+                    message: `✨ 已成功載入模擬資料！` 
+                  }), 150);
+                },
+                getHolidaysByYear: function(y) {
+                  setTimeout(() => cb({
+                    success: true,
+                    holidays: {
+                      "1/1": "元旦",
+                      "1/25": "除夕",
+                      "1/26": "春節",
+                      "1/27": "春節",
+                      "1/28": "春節",
+                      "2/28": "和平紀念日",
+                      "4/3": "兒童節",
+                      "4/4": "清明節"
+                    }
+                  }), 100);
+                }
+              };
+            }
+          }
+        }
+      };
     }
-    const database = (firebaseConfig.apiKey !== "YOUR_API_KEY") ? firebase.database() : null;
 
     const REASONS = [
       {code:'', label:''},
@@ -589,11 +606,10 @@
     let loadedPassword = null; 
     let fetchedHolidays = {}; 
 
-    // 🆕 核心修正：年月份一律保持空白，提供最佳載入彈性
     window.onload = function() {
       initDateSelects();
       initDayDropdowns();
-      renderSheet(); 
+      renderSheet();
     };
 
     function initDateSelects() {
@@ -603,9 +619,6 @@
       for (let y = 115; y <= 125; y++) { yearSelect.add(new Option(y, y)); }
       monthSelect.innerHTML = '<option value=""></option>';
       for (let m = 1; m <= 12; m++) { monthSelect.add(new Option(m, m)); }
-      
-      yearSelect.value = "";
-      monthSelect.value = "";
     }
 
     function initDayDropdowns() {
@@ -617,22 +630,6 @@
       });
     }
 
-    function getHolidaysByYearLocal(rocYear) {
-      const staticHolidays = {
-        "115": {
-          "1/1": "元旦", "2/16": "除夕", "2/17": "春節", "2/18": "春節", "2/19": "春節", "2/20": "春節補假",
-          "2/28": "和平紀念日", "4/4": "兒童節", "4/5": "清明節", "5/1": "勞動節", "6/19": "端午節",
-          "9/25": "中秋節", "9/28": "教師節", "10/10": "國慶日", "12/25": "行憲紀念日"
-        },
-        "116": {
-          "1/1": "元旦", "2/6": "除夕", "2/7": "春節", "2/8": "春節", "2/9": "春節", "2/10": "春節補假",
-          "2/28": "和平紀念日", "4/4": "兒童節", "4/5": "清明節", "5/1": "勞動節", "6/9": "端午節",
-          "9/15": "中秋節", "10/10": "國慶日", "12/25": "行憲紀念日"
-        }
-      };
-      return staticHolidays[rocYear] || {};
-    }
-
     function fetchHolidaysAndRender(onCompleteCallback) {
       const year = document.getElementById('yearSelect').value;
       if (!year) { 
@@ -640,9 +637,12 @@
         if (onCompleteCallback) onCompleteCallback();
         return; 
       }
-      fetchedHolidays = getHolidaysByYearLocal(year);
-      renderSheet();
-      if (onCompleteCallback) onCompleteCallback();
+      
+      google.script.run.withSuccessHandler(function(res) {
+        if (res.success) fetchedHolidays = res.holidays; else fetchedHolidays = {};
+        renderSheet();
+        if (onCompleteCallback) onCompleteCallback();
+      }).getHolidaysByYear(year);
     }
 
     function renderSheet() {
@@ -758,9 +758,9 @@
         if (day <= 16) left.appendChild(row); else right.appendChild(row);
       }
       
-      // 補白對稱機制
-      const leftRowCount = left.children.length; 
-      const rightRowCount = right.children.length; 
+      // 🆕 補白對稱機制：補齊右側表格至精準的 16 列，確保左右格線完美水平對齊
+      const leftRowCount = left.children.length; // 恆為 16 列 (1~16)
+      const rightRowCount = right.children.length; // 恆為 15 列 (17~31)
       const padCount = leftRowCount - rightRowCount;
       for (let p = 0; p < padCount; p++) {
          const dummyRow = document.createElement('tr');
@@ -883,7 +883,9 @@
       const month = parseInt(mVal);
       const isWorkDay = (d) => { let date = new Date(year, month - 1, d); let w = date.getDay(); return (w !== 0 && w !== 6); };
       let lockMap = {};
-      const applyRule = (s, e) => {
+
+      // 導護的鎖定規則（原規則）
+      const applyGuardRule = (s, e) => {
         if (s > e) return;
         let count = 0;
         for (let d = s; d <= e; d++) {
@@ -895,8 +897,21 @@
           else if (count === 6) { lockMap[d][0] = true; lockMap[d][1] = true; }
         }
       };
-      if (pStart > 0 && pEnd > 0) applyRule(pStart, pEnd);
-      if (gStart > 0 && gEnd > 0) applyRule(gStart, gEnd);
+
+      // 巡查的鎖定規則（修正：從起點天當週五至下週週五，早上兩格 07:30-07:40、07:40-07:50 限制無法填寫，下午兩格開放填寫）
+      const applyPatrolRule = (s, e) => {
+        if (s > e) return;
+        for (let d = s; d <= e; d++) {
+          if (!isWorkDay(d)) continue;
+          if (!lockMap[d]) lockMap[d] = [false, false, false, false];
+          lockMap[d][0] = true; // 07:30-07:40 鎖定
+          lockMap[d][1] = true; // 07:40-07:50 鎖定
+          // 下午兩格 15:50-16:10、16:10-16:30 保持開放 (為 false)，故不設為 true
+        }
+      };
+
+      if (pStart > 0 && pEnd > 0) applyPatrolRule(pStart, pEnd);
+      if (gStart > 0 && gEnd > 0) applyGuardRule(gStart, gEnd);
 
       for (let d = 1; d <= 31; d++) {
         const slot0 = document.getElementById(`d${d}_s0`);
@@ -1118,86 +1133,38 @@
     }
 
     function handleSave() {
-      if (!database) { alert('請先設定 Firebase Config 憑證才能儲存喔！'); return; }
-      const pwd = document.getElementById('userPassword').value.trim();
-      const name = document.getElementById('teacherName').value.trim();
-      if (!pwd || !name) { alert('請輸入密碼與姓名！'); return; }
+      const pwd = document.getElementById('userPassword').value;
+      if (!pwd) { alert('請輸入密碼！'); return; }
+      const data = getFormData();
+      if (loadedPassword && pwd === loadedPassword) data.isNewUser = false;
+      else data.isNewUser = true;
+      google.script.run
+        .withSuccessHandler(res => {
+          if (!res.success) alert(res.message); 
+          else { loadedPassword = pwd; showToast("💾 資料儲存成功！"); }
+        })
+        .withFailureHandler(err => alert("儲存失敗：" + err))
+        .saveData(data);
+    }
+
+    function handleLoad() {
+      const pwd = document.getElementById('userPassword').value;
+      if (!pwd) { alert('請輸入密碼！'); return; }
       
       const year = document.getElementById('yearSelect').value;
       const month = document.getElementById('monthSelect').value;
-      if (!year || !month) { alert('請選取年、月份！'); return; }
-
-      const data = getFormData();
       
-      database.ref('passwords/' + pwd).once('value').then(snapshot => {
-         const existingName = snapshot.val();
-         if (existingName && existingName !== name) {
-            alert("❌ 此密碼已由其他老師登錄使用，請更換一組密碼。");
-            return;
-         }
-         
-         database.ref('passwords/' + pwd).set(name).then(() => {
-            return database.ref('records/' + pwd + '/' + year + '_' + month).set({
-               ...data,
-               lastUpdated: new Date().toISOString()
-            });
-         }).then(() => {
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res.success) {
+            populateForm(res.data);
             loadedPassword = pwd;
-            showToast("💾 資料儲存成功！");
-         }).catch(err => {
-            alert("儲存失敗：" + err.message);
-         });
-      });
-    }
-
-    // 🆕 核心修正：只要密碼正確就直接秒速讀取！智慧比對與還原特定/最新歷史年月！
-    function handleLoad() {
-      if (!database) { alert('請先設定 Firebase Config 憑證才能讀取喔！'); return; }
-      const pwd = document.getElementById('userPassword').value.trim();
-      if (!pwd) { alert('請輸入密碼！'); return; }
-      
-      database.ref('records/' + pwd).once('value').then(snapshot => {
-         const allRecords = snapshot.val();
-         if (!allRecords) {
-            alert("❌ 找不到此密碼的存報紀錄，請確認密碼是否正確。");
-            return;
-         }
-         
-         let targetRecord = null;
-         const selectedYear = document.getElementById('yearSelect').value;
-         const selectedMonth = document.getElementById('monthSelect').value;
-         
-         // 1. 如果老師已經先選了特定的年月，則精準載入該年月份
-         if (selectedYear && selectedMonth) {
-            const key = selectedYear + '_' + selectedMonth;
-            if (allRecords[key]) {
-               targetRecord = allRecords[key];
-            }
-         }
-         
-         // 2. 如果選單是空白的（預設），則自動幫他搜尋出「最後更新時間最新（lastUpdated）」的加班表
-         if (!targetRecord) {
-            let latestTime = 0;
-            for (let k in allRecords) {
-               const rec = allRecords[k];
-               const recTime = rec.lastUpdated ? new Date(rec.lastUpdated).getTime() : 0;
-               if (recTime >= latestTime) {
-                  latestTime = recTime;
-                  targetRecord = rec;
-               }
-            }
-         }
-         
-         if (targetRecord) {
-            populateForm(targetRecord);
-            loadedPassword = pwd;
-            showToast(`✨ 成功載入 ${targetRecord.year} 年 ${targetRecord.month} 月的歷史加班紀錄！`);
-         } else {
-            alert("❌ 找不到此密碼對應的歷史紀錄。");
-         }
-      }).catch(err => {
-         alert("讀取失敗：" + err.message);
-      });
+            showToast(res.message);
+          } else {
+            alert(res.message);
+          }
+        })
+        .loadData(pwd, year, month);
     }
 
     function populateForm(data) {
@@ -1223,10 +1190,9 @@
               for (let i = 0; i < 4; i++) {
                 const el = document.getElementById(`d${d}_s${i}`);
                 if (el) {
-                  const val = (vals && vals[i] !== undefined) ? vals[i] : "";
-                  el.value = val;
+                  el.value = vals[i];
                   const disp = document.getElementById(`d${d}_disp${i}`);
-                  if(disp) disp.innerText = val;
+                  if(disp) disp.innerText = vals[i];
                 }
               }
               calculateDay(d);
