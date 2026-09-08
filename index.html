@@ -169,7 +169,7 @@
     .time-sep { font-size: 10px; line-height: 0.8; margin: 1px 0; font-weight: normal; }
     .th-min { font-size: 10px; font-weight: normal; display: block; margin-top: 2px; }
     
-    /* 📅 🆕 完美修復：恢復原生 TD 行為，消除 flex 屬性，確保 100% 對齊表格格線 */
+    /* 📅 完美修復：恢復原生 TD 行為，消除 flex 屬性，確保 100% 對齊表格格線 */
     .day-cell { 
       line-height: 1.2; 
       position: relative; 
@@ -882,37 +882,38 @@
       const year = parseInt(yVal) + 1911;
       const month = parseInt(mVal);
       const isWorkDay = (d) => { let date = new Date(year, month - 1, d); let w = date.getDay(); return (w !== 0 && w !== 6); };
+      
+      // 建立每日 4 個時段欄位的鎖定狀態陣列 [07:30, 07:40, 15:50, 16:10]
       let lockMap = {};
 
-      // 導護的鎖定規則（原規則）
-      const applyGuardRule = (s, e) => {
-        if (s > e) return;
-        let count = 0;
-        for (let d = s; d <= e; d++) {
-          if (!isWorkDay(d)) continue;
-          count++;
-          if (!lockMap[d]) lockMap[d] = [false, false, false, false];
-          if (count === 1) { lockMap[d][1] = true; lockMap[d][2] = true; }
-          else if (count >= 2 && count <= 5) { lockMap[d][0] = true; lockMap[d][1] = true; lockMap[d][2] = true; }
-          else if (count === 6) { lockMap[d][0] = true; lockMap[d][1] = true; }
-        }
-      };
-
-      // 巡查的鎖定規則（修正：從起點天當週五至下週週五，早上兩格 07:30-07:40、07:40-07:50 限制無法填寫，下午兩格開放填寫）
-      const applyPatrolRule = (s, e) => {
-        if (s > e) return;
-        for (let d = s; d <= e; d++) {
+      // 1. 校園巡查規則：指定日期區間內的「上班日」，僅鎖定上午前兩格（07:30-07:40, 07:40-07:50），下午兩格開放填寫
+      if (pStart > 0 && pEnd > 0 && pStart <= pEnd) {
+        for (let d = pStart; d <= pEnd; d++) {
           if (!isWorkDay(d)) continue;
           if (!lockMap[d]) lockMap[d] = [false, false, false, false];
           lockMap[d][0] = true; // 07:30-07:40 鎖定
           lockMap[d][1] = true; // 07:40-07:50 鎖定
-          // 下午兩格 15:50-16:10、16:10-16:30 保持開放 (為 false)，故不設為 true
         }
-      };
+      }
 
-      if (pStart > 0 && pEnd > 0) applyPatrolRule(pStart, pEnd);
-      if (gStart > 0 && gEnd > 0) applyGuardRule(gStart, gEnd);
+      // 2. 校園導護規則（原導護輪值鎖定邏輯）
+      if (gStart > 0 && gEnd > 0 && gStart <= gEnd) {
+        let count = 0;
+        for (let d = gStart; d <= gEnd; d++) {
+          if (!isWorkDay(d)) continue;
+          count++;
+          if (!lockMap[d]) lockMap[d] = [false, false, false, false];
+          if (count === 1) { 
+            lockMap[d][1] = true; lockMap[d][2] = true; 
+          } else if (count >= 2 && count <= 5) { 
+            lockMap[d][0] = true; lockMap[d][1] = true; lockMap[d][2] = true; 
+          } else if (count === 6) { 
+            lockMap[d][0] = true; lockMap[d][1] = true; 
+          }
+        }
+      }
 
+      // 應用鎖定與畫面呈現
       for (let d = 1; d <= 31; d++) {
         const slot0 = document.getElementById(`d${d}_s0`);
         if (!slot0) continue;
